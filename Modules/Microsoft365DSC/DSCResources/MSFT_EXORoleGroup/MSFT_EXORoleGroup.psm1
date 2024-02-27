@@ -52,20 +52,28 @@ function Get-TargetResource
 
         [Parameter()]
         [Switch]
-        $ManagedIdentity
+        $ManagedIdentity,
+
+        [Parameter()]
+        [Switch]
+        $AccessToken,
+
+        [Parameter()]
+        [System.String]
+        $UserPrincipalName
     )
 
-    Write-Verbose -Message "Getting Role Group configuration for $Name"
+    Write-Verbose -Message "Latest namrata Getting Role Group configuration for $Name"
     if ($Global:CurrentModeIsExport)
     {
         $ConnectionMode = New-M365DSCConnection -Workload 'ExchangeOnline' `
             -InboundParameters $PSBoundParameters `
-            -SkipModuleReload $true
+            -SkipModuleReload $false -Verbose
     }
     else
     {
         $ConnectionMode = New-M365DSCConnection -Workload 'ExchangeOnline' `
-            -InboundParameters $PSBoundParameters
+            -InboundParameters $PSBoundParameters -Verbose
     }
 
     #Ensure the proper dependencies are installed in the current environment.
@@ -118,6 +126,8 @@ function Get-TargetResource
                 CertificatePassword   = $CertificatePassword
                 Managedidentity       = $ManagedIdentity.IsPresent
                 TenantId              = $TenantId
+                AccessToken           = $AccessToken.IsPresent
+                UserPrincipalName     = $UserPrincipalName
             }
 
             Write-Verbose -Message "Found Role Group $($Name)"
@@ -189,10 +199,18 @@ function Set-TargetResource
 
         [Parameter()]
         [Switch]
-        $ManagedIdentity
+        $ManagedIdentity,
+
+        [Parameter()]
+        [Switch]
+        $AccessToken,
+
+        [Parameter()]
+        [System.String]
+        $UserPrincipalName
     )
 
-    Write-Verbose -Message "Setting Role Group configuration for $Name"
+    Write-Verbose -Message "POC Setting Role Group configuration for $Name"
 
     $currentRoleGroupConfig = Get-TargetResource @PSBoundParameters
 
@@ -322,7 +340,15 @@ function Test-TargetResource
 
         [Parameter()]
         [Switch]
-        $ManagedIdentity
+        $ManagedIdentity,
+
+        [Parameter()]
+        [Switch]
+        $AccessToken,
+
+        [Parameter()]
+        [System.String]
+        $UserPrincipalName
     )
     #Ensure the proper dependencies are installed in the current environment.
     Confirm-M365DSCDependencies
@@ -336,7 +362,7 @@ function Test-TargetResource
     Add-M365DSCTelemetryEvent -Data $data
     #endregion
 
-    Write-Verbose -Message "Testing Role Group configuration for $Name"
+    Write-Verbose -Message "Latest Testing Role Group configuration for $Name"
 
     $CurrentValues = Get-TargetResource @PSBoundParameters
 
@@ -351,6 +377,8 @@ function Test-TargetResource
     $ValuesToCheck.Remove('CertificatePath') | Out-Null
     $ValuesToCheck.Remove('CertificatePassword') | Out-Null
     $ValuesToCheck.Remove('ManagedIdentity') | Out-Null
+    $ValuesToCheck.Remove('AccessToken') | Out-Null
+    $ValuesToCheck.Remove('UserPrincipalName') | Out-Null
 
     $TestResult = Test-M365DSCParameterState -CurrentValues $CurrentValues `
         -Source $($MyInvocation.MyCommand.Source) `
@@ -394,11 +422,19 @@ function Export-TargetResource
 
         [Parameter()]
         [Switch]
-        $ManagedIdentity
+        $ManagedIdentity,
+
+        [Parameter()]
+        [Switch]
+        $AccessToken,
+
+        [Parameter()]
+        [System.String]
+        $UserPrincipalName
     )
     $ConnectionMode = New-M365DSCConnection -Workload 'ExchangeOnline' `
         -InboundParameters $PSBoundParameters `
-        -SkipModuleReload $true
+        -SkipModuleReload $false -Verbose
 
     #Ensure the proper dependencies are installed in the current environment.
     Confirm-M365DSCDependencies
@@ -444,6 +480,8 @@ function Export-TargetResource
                 CertificatePassword   = $CertificatePassword
                 Managedidentity       = $ManagedIdentity.IsPresent
                 CertificatePath       = $CertificatePath
+                AccessToken           = $AccessToken.IsPresent
+                UserPrincipalName     = $UserPrincipalName
             }
             $Results = Get-TargetResource @Params
             $Results = Update-M365DSCExportAuthenticationResults -ConnectionMode $ConnectionMode `

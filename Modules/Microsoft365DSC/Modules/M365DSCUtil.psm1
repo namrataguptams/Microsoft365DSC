@@ -44,6 +44,8 @@ function Format-EXOParams
     $EXOParams.Remove('CertificateThumbprint') | Out-Null
     $EXOParams.Remove('CertificatePath') | Out-Null
     $EXOParams.Remove('CertificatePassword') | Out-Null
+    $EXOParams.Remove('AccessToken') | Out-Null
+    $EXOParams.Remove('UserPrincipalName') | Out-Null
     if ('New' -eq $Operation)
     {
         $EXOParams += @{
@@ -128,7 +130,7 @@ function Convert-M365DscHashtableToString
     )
 
     $values = @()
-    $parametersToObfuscate = @('ApplicationId', 'ApplicationSecret', 'TenantId', 'CertificateThumbprint', 'CertificatePath', 'CertificatePassword', 'Credential')
+    $parametersToObfuscate = @('ApplicationId', 'ApplicationSecret', 'TenantId', 'CertificateThumbprint', 'CertificatePath', 'CertificatePassword', 'Credential', 'UserPrincipalName')
     foreach ($pair in $Hashtable.GetEnumerator())
     {
         try
@@ -531,6 +533,18 @@ function Get-M365DSCTenantNameFromParameterSet
             return $null
         }
     }
+    elseif ($ParameterSet.AccessToken)
+    {
+        try
+        {
+            $tenantName = $ParameterSet.UserPrincipalName.Split('@')[1]
+            return $tenantName
+        }
+        catch
+        {
+            return $null
+        }
+    }
 }
 
 <#
@@ -614,7 +628,9 @@ function Test-M365DSCParameterState
                 -and ($_ -ne 'ApplicationId') -and ($_ -ne 'CertificateThumbprint') `
                 -and ($_ -ne 'CertificatePath') -and ($_ -ne 'CertificatePassword') `
                 -and ($_ -ne 'TenantId') -and ($_ -ne 'ApplicationSecret') `
-                -and ($_ -ne 'ManagedIdentity'))
+                -and ($_ -ne 'ManagedIdentity') `
+                -and ($_ -ne 'AccessToken') `
+                -and ($_ -ne 'UserPrincipalName'))
         {
             if (($CurrentValues.ContainsKey($_) -eq $false) `
                     -or ($CurrentValues.$_ -ne $DesiredValues.$_) `
@@ -1665,6 +1681,8 @@ function New-M365DSCConnection
 
     $Global:MaximumFunctionCount = 32767
 
+    Write-Verbose -Message "Inside new dsc connection";
+
     if ($Workload -eq 'MicrosoftTeams')
     {
         try
@@ -1720,14 +1738,16 @@ function New-M365DSCConnection
             [System.String]::IsNullOrEmpty($InboundParameters.ApplicationId) -and `
             [System.String]::IsNullOrEmpty($InboundParameters.TenantId) -and `
             [System.String]::IsNullOrEmpty($InboundParameters.CertificateThumbprint) -and `
-            -not $InboundParameters.ManagedIdentity)
+            -not $InboundParameters.ManagedIdentity -and `
+            -not $InboundParameters.AccessToken -and `
+            [System.String]::IsNullOrEmpty($InboundParameters.UserPrincipalName))
     {
         $message = 'No Authentication method was provided'
         Write-Verbose -Message $message
         $message += "`r`nProvided Keys --> $($InboundParameters.Keys)"
         $data.Add('Event', 'Error')
         $data.Add('Exception', $message)
-        $errorText = 'You must specify either the Credential or ApplicationId, TenantId and CertificateThumbprint parameters.'
+        $errorText = 'You must specify either the Credential or ApplicationId, TenantId and CertificateThumbprint or AccessToken and UserPrincipalName parameters.'
         $data.Add('CustomMessage', $errorText)
         Add-M365DSCTelemetryEvent -Type 'Error' -Data $data
         throw $errorText
@@ -1960,9 +1980,30 @@ function New-M365DSCConnection
         Add-M365DSCTelemetryEvent -Data $data -Type 'Connection'
         return 'ManagedIdentity'
     }
+    # Case only AccessToken and UserPrincipalName are specified
+    elseif ($InboundParameters.AccessToken -and `
+            -not [System.String]::IsNullOrEmpty($InboundParameters.UserPrincipalName))
+    {
+        Write-Verbose -Message 'Trying to get Access token'
+        $AccessTokenValue = "eyJ0eXAiOiJKV1QiLCJub25jZSI6IkVLejNuWU5DeS1BeG5uaUlzUlZkNkFyek9IdndrTGJqbGhSc3k4ZGdtdTgiLCJhbGciOiJSUzI1NiIsIng1dCI6ImtXYmthYTZxczh3c1RuQndpaU5ZT2hIYm5BdyIsImtpZCI6ImtXYmthYTZxczh3c1RuQndpaU5ZT2hIYm5BdyJ9.eyJhdWQiOiJodHRwczovL291dGxvb2sub2ZmaWNlMzY1LmNvbSIsImlzcyI6Imh0dHBzOi8vc3RzLndpbmRvd3MubmV0Lzc3NzQzYmI5LWI0Y2ItNDk1NC05YjVjLTM4N2RhNGJkMzYwOC8iLCJpYXQiOjE3MDgzMTQ2MjMsIm5iZiI6MTcwODMxNDYyMywiZXhwIjoxNzA4NDEwNzM5LCJhY2N0IjowLCJhY3IiOiIxIiwiYWlvIjoiQVRRQXkvOFdBQUFBNkhXTDkwd0Fvc0tmMTE3d1hRZjI5NFhBY1Q1VHdSNERUdlZYSmcrNWVpeXZyRmVXYWg1b2I5TkJmSHFjaWZLVyIsImFtciI6WyJwd2QiXSwiYXBwX2Rpc3BsYXluYW1lIjoiTWljcm9zb2Z0IEV4Y2hhbmdlIFJFU1QgQVBJIEJhc2VkIFBvd2Vyc2hlbGwiLCJhcHBpZCI6ImZiNzhkMzkwLTBjNTEtNDBjZC04ZTE3LWZkYmZhYjc3MzQxYiIsImFwcGlkYWNyIjoiMCIsImVuZnBvbGlkcyI6W10sImZhbWlseV9uYW1lIjoiQWRtaW5pc3RyYXRvciIsImdpdmVuX25hbWUiOiJNT0QiLCJpcGFkZHIiOiIyNDA0OmY4MDE6ODAyODoxOjE5NzQ6MmEyZDoxYjRlOmI2NDQiLCJsb2dpbl9oaW50IjoiTy5DaVEyTlRCbU9XVXpPUzAwWVdKaUxUUTVaVGt0WVdRMU5DMWxPR0kxTnpRM1lqVmtOMklTSkRjM056UXpZbUk1TFdJMFkySXRORGsxTkMwNVlqVmpMVE00TjJSaE5HSmtNell3T0JvaFlXUnRhVzVBVFRNMk5VSXdNakl4TXpFdWIyNXRhV055YjNOdlpuUXVZMjl0SUZVPSIsIm5hbWUiOiJNT0QgQWRtaW5pc3RyYXRvciIsIm9pZCI6IjY1MGY5ZTM5LTRhYmItNDllOS1hZDU0LWU4YjU3NDdiNWQ3YiIsInB1aWQiOiIxMDAzMjAwMzRCMEE3MTI0IiwicmgiOiIwLkFjb0F1VHQwZDh1MFZFbWJYRGg5cEwwMkNBSUFBQUFBQVBFUHpnQUFBQUFBQUFENkFBOC4iLCJzY3AiOiJBZG1pbkFwaS5BY2Nlc3NBc1VzZXIuQWxsIEZmb1Bvd2VyU2hlbGwuQWNjZXNzQXNVc2VyLkFsbCBSZW1vdGVQb3dlclNoZWxsLkFjY2Vzc0FzVXNlci5BbGwgVml2YUZlYXR1cmVBY2Nlc3NQb2xpY3kuTWFuYWdlLkFsbCIsInNpZCI6IjI1YTA2ZDU1LWE2OWMtNDI0ZS1iYzBjLTNhNWRiZTEzMGZlNiIsInN1YiI6IldoejZndG82c09Ncllhb3lLTWUwOEhlSFB5SWozN0ZMOWtlQWJIS0RYaEUiLCJ0aWQiOiI3Nzc0M2JiOS1iNGNiLTQ5NTQtOWI1Yy0zODdkYTRiZDM2MDgiLCJ1bmlxdWVfbmFtZSI6ImFkbWluQE0zNjVCMDIyMTMxLm9ubWljcm9zb2Z0LmNvbSIsInVwbiI6ImFkbWluQE0zNjVCMDIyMTMxLm9ubWljcm9zb2Z0LmNvbSIsInV0aSI6InJKNGFtREVRSGs2cjVSeDJsMG9VQUEiLCJ2ZXIiOiIxLjAiLCJ3aWRzIjpbIjYyZTkwMzk0LTY5ZjUtNDIzNy05MTkwLTAxMjE3NzE0NWUxMCIsImI3OWZiZjRkLTNlZjktNDY4OS04MTQzLTc2YjE5NGU4NTUwOSJdLCJ4bXNfY2MiOlsiY3AxIl0sInhtc19zc20iOiIxIn0.VBG0LotPslPS9bZkPj-QSTbCSsFXaTDZxdYwRDnguIzhqGycv5SUw3n6IGSdE8TJgOD2808vh2WRUb6svkpX7POHX6-1SCR20Jv91TPme1KNR1CF2tdKzxaIED14wbmgCZ3TSMBZN11wwRERn9CYFB--zm8hrPWypmmT2sfuYLOXqeeGhrSlU4D2x1qE4SaonX0pg3aOXK7RC8wxbiPbVmpXpaV8_LxZmkad4-hrt7c7KWk7ucBwKxANjgLp5roZFdaX8n9WQdrVZ79WXR0pG04J7WsNiFa2Nlo-i93_xlQJk9Ym7QZ09U_gACIL6p77ApI1w_3GB6wuoiABYsmm6g"
+        Write-Verbose -Message 'Access token got is : '
+        Write-Verbose -Message $AccessTokenValue
+
+        Write-Verbose -Message 'Connecting via AccessToken'
+        Connect-M365Tenant -Workload $Workload `
+            -AccessToken $AccessTokenValue `
+            -UserPrincipalName $InboundParameters.UserPrincipalName `
+            -SkipModuleReload $Global:CurrentModeIsExport
+
+
+        $data.Add('ConnectionType', 'AccessToken')
+        $data.Add('Tenant', $InboundParameters.UserPrincipalName.Split('@')[1])
+        Add-M365DSCTelemetryEvent -Data $data -Type 'Connection'
+        return 'AccessToken'
+    }
     else
     {
-        throw 'Could not determine authentication method'
+        throw 'Could not determine namrata authentication method'
     }
 }
 
